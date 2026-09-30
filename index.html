@@ -123,7 +123,7 @@
             </div>
             <div class="flex gap-3 pt-2">
                 <button onclick="closeDeleteConfirm()" class="flex-1 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl transition-all">Batal</button>
-                <button id="btnConfirmDelete" class="flex-1 py-2 text-xs font-bold bg-rose-50 hover:bg-rose-600 text-white rounded-xl transition-all">Padam</button>
+                <button id="btnConfirmDelete" class="flex-1 py-2 text-xs font-bold bg-rose-500 hover:bg-rose-600 text-white rounded-xl transition-all">Padam</button>
             </div>
         </div>
     </div>
@@ -834,6 +834,13 @@
             return String(v == null ? "" : v).replace(/\s+/g, " ").trim().toUpperCase();
         }
 
+        // Elak XSS: data dari Sheet mesti di-escape sebelum dimasukkan ke innerHTML
+        function escapeHtml(v) {
+            return String(v == null ? "" : v)
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+        }
+
         function getBaseData() {
             if (!isLoggedIn || !currentUserRole) return [];
             if (currentUserRole === 'JPN' || currentUserRole === 'PENGARAH' || currentUserRole === 'TIMBALAN') return complaintsData;
@@ -1061,7 +1068,7 @@
             const years = [...new Set(baseData.map(c => c["TAHUN"]))].filter(Boolean).sort((a, b) => b - a);
             let html = `<button onclick="selectDashboardYear('ALL')" class="btn-md3 px-4 py-2 rounded-2xl text-xs font-bold transition-all border ${selectedYear === 'ALL' ? 'bg-indigo-600 text-white border-indigo-700 shadow-glow-indigo' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}">Semua</button>`;
             years.forEach(yr => {
-                html += `<button onclick="selectDashboardYear('${yr}')" class="btn-md3 px-4 py-2 rounded-2xl text-xs font-bold transition-all border ${String(selectedYear) === String(yr) ? 'bg-indigo-600 text-white border-indigo-700 shadow-glow-indigo' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}">${yr}</button>`;
+                html += `<button onclick="selectDashboardYear('${escapeHtml(yr)}')" class="btn-md3 px-4 py-2 rounded-2xl text-xs font-bold transition-all border ${String(selectedYear) === String(yr) ? 'bg-indigo-600 text-white border-indigo-700 shadow-glow-indigo' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'}">${escapeHtml(yr)}</button>`;
             });
             container.innerHTML = html;
         }
@@ -1076,7 +1083,7 @@
                 if (currentUserRole === 'JPN' || currentUserRole === 'PENGARAH' || currentUserRole === 'TIMBALAN') {
                     const baseData = getBaseData();
                     const ppds = [...new Set(baseData.map(c => c["PPD"]).filter(Boolean))].sort();
-                    ppdDropdown.innerHTML = `<option value="ALL">JPN/PPD</option>` + ppds.map(ppd => `<option value="${ppd}" ${ppd === selectedDashboardPPD ? 'selected' : ''}>${ppd}</option>`).join('');
+                    ppdDropdown.innerHTML = `<option value="ALL">JPN/PPD</option>` + ppds.map(ppd => `<option value="${escapeHtml(ppd)}" ${ppd === selectedDashboardPPD ? 'selected' : ''}>${escapeHtml(ppd)}</option>`).join('');
                     ppdContainer.classList.remove('hidden');
                     document.getElementById('ppd-chart-container')?.classList.remove('hidden');
                     document.getElementById('trend-chart-container')?.classList.remove('hidden');
@@ -1128,14 +1135,14 @@
             const baseData = getBaseData(); 
             const filterCategory = document.getElementById('filterCategory');
             const categories = [...new Set(baseData.map(c => c["KATEGORI KES"]).filter(Boolean))];
-            filterCategory.innerHTML = `<option value="ALL">Semua Kategori</option>` + categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+            filterCategory.innerHTML = `<option value="ALL">Semua Kategori</option>` + categories.map(cat => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join('');
                 
             const filterPPD = document.getElementById('filterPPD');
             const ppdContainer = document.getElementById('filterPPDContainer');
             if (filterPPD && ppdContainer) {
                 if (currentUserRole === 'JPN' || currentUserRole === 'PENGARAH' || currentUserRole === 'TIMBALAN') {
                     const ppds = [...new Set(baseData.map(c => c["PPD"]).filter(Boolean))].sort();
-                    filterPPD.innerHTML = `<option value="ALL">JPN/PPD</option>` + ppds.map(ppd => `<option value="${ppd}">${ppd}</option>`).join('');
+                    filterPPD.innerHTML = `<option value="ALL">JPN/PPD</option>` + ppds.map(ppd => `<option value="${escapeHtml(ppd)}">${escapeHtml(ppd)}</option>`).join('');
                     ppdContainer.classList.remove('hidden');
                 } else {
                     ppdContainer.classList.add('hidden');
@@ -1274,20 +1281,20 @@
                 tr.addEventListener('click', (e) => { if(!e.target.closest('.action-btn')) openDetailsModal(c); });
 
                 tr.innerHTML = `
-                    <td class="px-6 py-4 font-bold text-indigo-500 dark:text-secondary-500">${c["NO KES"]}</td>
-                    <td class="px-6 py-4 text-slate-500 font-medium">${c["TARIKH TERIMA"] || '-'}</td>
-                    <td class="px-6 py-4 font-bold truncate max-w-[120px] dark:text-slate-300" title="${c["PPD"]}">${c["PPD"] || '-'}</td>
-                    <td class="px-6 py-4 font-bold dark:text-white">${c["PEGAWAI PENYIASAT"]}</td>
+                    <td class="px-6 py-4 font-bold text-indigo-500 dark:text-secondary-500">${escapeHtml(c["NO KES"])}</td>
+                    <td class="px-6 py-4 text-slate-500 font-medium">${escapeHtml(c["TARIKH TERIMA"] || '-')}</td>
+                    <td class="px-6 py-4 font-bold truncate max-w-[120px] dark:text-slate-300" title="${escapeHtml(c["PPD"])}">${escapeHtml(c["PPD"] || '-')}</td>
+                    <td class="px-6 py-4 font-bold dark:text-white">${escapeHtml(c["PEGAWAI PENYIASAT"])}</td>
                     <td class="px-6 py-4">
-                        <span class="block font-bold dark:text-white">${c["KATEGORI KES"] || '-'}</span>
-                        <span class="block text-[10px] text-slate-400 font-semibold">${c["KLASIFIKASI"] || '-'}</span>
+                        <span class="block font-bold dark:text-white">${escapeHtml(c["KATEGORI KES"] || '-')}</span>
+                        <span class="block text-[10px] text-slate-400 font-semibold">${escapeHtml(c["KLASIFIKASI"] || '-')}</span>
                     </td>
-                    <td class="px-6 py-4 font-bold truncate max-w-[160px] dark:text-slate-300" title="${c["SEKOLAH"]}">${c["SEKOLAH"]}</td>
+                    <td class="px-6 py-4 font-bold truncate max-w-[160px] dark:text-slate-300" title="${escapeHtml(c["SEKOLAH"])}">${escapeHtml(c["SEKOLAH"])}</td>
                     <td class="px-6 py-4">
                         <span class="block font-bold dark:text-white">${c.STATUS === 'Selesai' ? `${slaDays} Hari` : '-'}</span>
                         <span class="block mt-1">${slaStyle}</span>
                     </td>
-                    <td class="px-6 py-4"><span class="px-2.5 py-1 text-[10px] font-bold rounded-full ${statusStyle}">${c.STATUS}</span></td>
+                    <td class="px-6 py-4"><span class="px-2.5 py-1 text-[10px] font-bold rounded-full ${statusStyle}">${escapeHtml(c.STATUS)}</span></td>
                     <td class="px-6 py-4 text-center">
                         <button class="action-btn text-indigo-500 hover:text-indigo-700 p-2 bg-indigo-50 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg transition-all"><i class="fa-solid ${(currentUserRole === 'PENGARAH' || currentUserRole === 'TIMBALAN') ? 'fa-eye' : 'fa-user-gear'}"></i></button>
                     </td>
@@ -1564,7 +1571,7 @@
             const maxCount = sortedSchools[0][1];
             container.innerHTML = sortedSchools.map(([school, count]) => `
                 <div class="space-y-1">
-                    <div class="flex justify-between text-xs"><span class="text-slate-700 dark:text-slate-300 truncate font-medium">${school}</span><span class="font-extrabold dark:text-white">${count}</span></div>
+                    <div class="flex justify-between text-xs"><span class="text-slate-700 dark:text-slate-300 truncate font-medium">${escapeHtml(school)}</span><span class="font-extrabold dark:text-white">${count}</span></div>
                     <div class="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden"><div class="bg-indigo-500 h-full" style="width: ${(count/maxCount)*100}%"></div></div>
                 </div>`).join('');
         }
@@ -1582,7 +1589,7 @@
         function renderBIMetrics() {
             const resolved = dashboardData.filter(c => c.STATUS === 'Selesai');
             const withinSLA = resolved.filter(c => Number(c["TEMPOH SELESAI"]) <= 15).length;
-            const exceededSLA = dashboardData.filter(c => Number(c["TEMPOH SELESAI"]) > 15).length;
+            const exceededSLA = resolved.filter(c => Number(c["TEMPOH SELESAI"]) > 15).length;
             document.getElementById('bi-sla-met').innerText = `${resolved.length > 0 ? Math.round((withinSLA / resolved.length) * 100) : 0}%`;
             document.getElementById('bi-sla-exceeded').innerText = exceededSLA;
 
@@ -1598,13 +1605,22 @@
             if (durations.length > 0) {
                 document.getElementById('bi-fastest-duration').innerText = `${Math.min(...durations)} Hari`;
                 document.getElementById('bi-slowest-duration').innerText = `${Math.max(...durations)} Hari`;
+            } else {
+                document.getElementById('bi-fastest-duration').innerText = '-';
+                document.getElementById('bi-slowest-duration').innerText = '-';
             }
         }
 
         function exportCSVData() {
             if(filteredData.length === 0) return showToast("Eksport Batal", "Tiada data untuk dieksport.", "danger");
             const headers = ["TAHUN", "PPD", "PEGAWAI PENYIASAT", "NO KES", "ORANG YANG DIADU", "SEKOLAH", "BULAN", "TARIKH TERIMA", "TARIKH SELESAI", "TEMPOH SELESAI", "KES", "KATEGORI KES", "SUBKATEGORI", "KLASIFIKASI", "STATUS"];
-            const rows = filteredData.map(c => [c["TAHUN"], `"${c["PPD"]}"`, `"${c["PEGAWAI PENYIASAT"]}"`, c["NO KES"], `"${c["ORANG YANG DIADU"]}"`, `"${c["SEKOLAH"]}"`, c["BULAN"], c["TARIKH TERIMA"], c["TARIKH SELESAI"], c["TEMPOH SELESAI"], `"${c["KES"].replace(/"/g, '""')}"`, `"${c["KATEGORI KES"]}"`, `"${c["SUBKATEGORI"]}"`, `"${c["KLASIFIKASI"] || ""}"`, c["STATUS"]]);
+            // Setiap medan dipetik & tanda " digandakan; awalan = + - @ dineutralkan (elak CSV injection)
+            const csvCell = (v) => {
+                let str = String(v == null ? "" : v);
+                if (/^[=+\-@]/.test(str)) str = "'" + str;
+                return `"${str.replace(/"/g, '""')}"`;
+            };
+            const rows = filteredData.map(c => headers.map(h => csvCell(c[h])));
             const csvContent = headers.join(",") + "\r\n" + rows.map(e => e.join(",")).join("\r\n");
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); const url = URL.createObjectURL(blob);
             const link = document.createElement("a"); link.setAttribute("href", url); link.setAttribute("download", "SISPAA_Saringan.csv"); document.body.appendChild(link); link.click(); document.body.removeChild(link);
@@ -1704,7 +1720,8 @@
             if (isSavingAdmin) return; // Halang simpan berganda (double-click)
             const rawIndex = Number(document.getElementById('modal-index-indicator').value);
             if (rawIndex === -1 || isNaN(rawIndex)) return;
-            const targetCase = complaintsData[rawIndex];
+            // Salinan — data asal hanya diganti selepas permintaan berjaya dihantar
+            const targetCase = { ...complaintsData[rawIndex] };
 
             isSavingAdmin = true;
             const btnSave = document.getElementById('modal-btn-save');
@@ -1762,9 +1779,9 @@
         function closeDeleteConfirm() { document.getElementById('confirmDeleteModal').classList.add('hidden'); document.getElementById('confirmDeleteModal').classList.remove('flex'); deleteTargetIndex = null; }
         
         function executeDelete() {
-            if (deleteTargetIndex !== null) {
+            if (deleteTargetIndex !== null && deleteTargetIndex >= 0) {
                 complaintsData.splice(deleteTargetIndex, 1); initDashboard(); if(activeTab === 'cases') applyFilters();
-                closeDeleteConfirm(); closeDetailsModal(); showToast("Dipadam", "Rekod dipadam.", "danger");
+                closeDeleteConfirm(); closeDetailsModal(); showToast("Dibuang dari Paparan", "Rekod dibuang dari paparan sahaja. Rekod masih wujud di Google Sheets dan akan muncul semula selepas Muat Semula.", "warning");
             }
         }
 
@@ -1859,7 +1876,7 @@
                 download: true, header: true, skipEmptyLines: true,
                 complete: function(results) {
                     if(results.data.length === 0) return;
-                    const imported = results.data.map(row => {
+                    const imported = results.data.map((row, rowIdx) => {
                         const getVal = (key) => getRowValueFuzzy(row, key);
                         const tarikhTerimaNorm = normalizeDate(getVal("TARIKH TERIMA") || getVal("TARIKH_TERIMA") || getVal("TARIKH_MASUK") || getVal("TARIKH") || getVal("TIMESTAMP"));
                         const tarikhSelesaiNorm = normalizeDate(getVal("TARIKH SELESAI") || getVal("TARIKH_SELESAI") || getVal("TARIKH_TUTUP"));
@@ -1880,7 +1897,7 @@
                             "TAHUN": tahunVal,
                             "PPD": getVal("PPD") || getVal("PEJABAT") || "Tidak Dinyatakan",
                             "PEGAWAI PENYIASAT": getVal("PEGAWAI PENYIASAT") || getVal("NAMA PENYIASAT") || getVal("NAMA PENGADU") || getVal("PENGADU") || "Tidak Dinyatakan",
-                            "NO KES": getVal("NO KES") || `KPM/GEN/${Math.floor(1000 + Math.random() * 9000)}`,
+                            "NO KES": getVal("NO KES") || `TIADA-NO-KES-BARIS-${rowIdx + 2}`,
                             "ORANG YANG DIADU": getVal("ORANG YANG DIADU") || "Tidak Dinyatakan",
                             "SEKOLAH": getVal("SEKOLAH") || "Institusi Pendidikan Am",
                             "BULAN": bulanVal,
