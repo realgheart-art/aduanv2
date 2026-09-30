@@ -43,7 +43,6 @@
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
@@ -785,8 +784,6 @@
     <script>
         // URL rasmi Google Apps Script 
         const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby35dVLeC8OA1E0AzqYoGsMH0213jDK91cjpQjWvDKE6zwmc_DsbKwK0m4Iqus2MAOsbA/exec';
-        // URL Sijil Penerbitan CSV Google Sheets (Kekal di belakang tabir)
-        const CSV_DATA_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSEmpTdbWBg50WBuZJfxhcuNNIOhupgBeSbv43ixGv-MK8O9RwDTBYVlzJ420QQG_wVlWuJRn6opO8Y/pub?output=csv';
 
         let activeTab = 'dashboard';
         let complaintsData = [];
@@ -807,20 +804,32 @@
         let tableCurrentPage = 1;
         const recordsPerPage = 10;
 
-        const ppdCredentials = {
-            "PENGARAH": { pwd: "PENGARAH", role: "PENGARAH" },
-            "TIMBALAN": { pwd: "TIMBALAN", role: "TIMBALAN" },
-            "PPDPENDANG": { pwd: "K080", role: "PENDANG" },
-            "PPDKOTASETAR": { pwd: "KOTASETAR", role: "KOTA SETAR" },
-            "PPDKUALAMUDA": { pwd: "KUALAMUDA", role: "KUALA MUDA" },
-            "PPDYAN": { pwd: "YAN", role: "YAN" },
-            "PPDBALING": { pwd: "BALING", role: "BALING" },
-            "PPDSIK": { pwd: "SIK", role: "SIK" },
-            "PPDLANGKAWI": { pwd: "LANGKAWI", role: "LANGKAWI" },
-            "PPDKUBANGPASU": { pwd: "KUBANGPASU", role: "KUBANG PASU" },
-            "PPDPADANGTERAP": { pwd: "PADANGTERAP", role: "PADANG TERAP" },
-            "PPDKULIMBANDARBARU": { pwd: "KBB", role: "KULIM BANDAR BAHARU" }
-        };
+        // Token sesi daripada pelayan (Apps Script). Disimpan dalam memori sahaja —
+        // muat semula halaman = log masuk semula.
+        let authToken = null;
+
+        // Hantar permintaan ke Apps Script dan baca jawapan JSON.
+        // Ralat pelayan (status !== 'success') dilempar sebagai Error.
+        function postToServer(payload) {
+            const body = new URLSearchParams();
+            for (const key in payload) body.append(key, payload[key] == null ? "" : payload[key]);
+            if (authToken && payload.METHOD !== 'LOGIN') body.append("TOKEN", authToken);
+            return fetch(SCRIPT_URL, { method: 'POST', body })
+                .then(res => {
+                    if (!res.ok) throw new Error(`Pelayan membalas HTTP ${res.status}`);
+                    return res.json();
+                })
+                .then(res => {
+                    if (res.status === 'success') return res;
+                    if (res.code === 'SESSION_EXPIRED' && isLoggedIn) {
+                        showToast("Sesi Tamat", "Sila log masuk semula.", "warning");
+                        handleLogout();
+                    }
+                    const err = new Error(res.message || "Ralat pelayan tidak diketahui.");
+                    err.code = res.code;
+                    throw err;
+                });
+        }
 
         const roleAliases = {
             "PENDANG": ["PENDANG"], "KOTA SETAR": ["KOTA SETAR", "KOTA STAR"], "KUALA MUDA": ["KUALA MUDA", "KMY"],
@@ -857,32 +866,26 @@
         function handleLogin(event) {
             event.preventDefault();
             const idInput = document.getElementById('login-id').value.trim().toUpperCase();
-            const pwdInput = document.getElementById('login-pwd').value.trim().toUpperCase();
+            const pwdInput = document.getElementById('login-pwd').value;
             const btnSubmit = document.getElementById('btn-login');
             const loadingInd = document.getElementById('login-loading');
 
             btnSubmit.classList.add('hidden');
             loadingInd.classList.remove('hidden');
 
-            setTimeout(() => {
-                let authSuccess = false;
-                let assignedRole = null;
-
-                if (idInput === 'ADMIN' && pwdInput === 'JPNKEDAH') {
-                    authSuccess = true; assignedRole = 'JPN';
-                } else if (ppdCredentials[idInput] && pwdInput === ppdCredentials[idInput].pwd) {
-                    authSuccess = true; assignedRole = ppdCredentials[idInput].role;
-                }
-
-                if (authSuccess) {
-                    executeLoginSequence(assignedRole);
-                } else {
-                    showToast("Log Masuk Gagal", "ID Pengguna atau Kata Laluan tidak tepat. Sila semak semula.", "danger");
+            // Semakan kata laluan dibuat di pelayan — tiada kata laluan dalam kod ini.
+            postToServer({ METHOD: 'LOGIN', ID: idInput, PASSWORD: pwdInput })
+                .then(res => {
+                    authToken = res.token;
+                    executeLoginSequence(res.role);
+                    fetchGoogleSheetsData(true);
+                })
+                .catch(err => {
+                    showToast("Log Masuk Gagal", escapeHtml(err.message), "danger");
                     btnSubmit.classList.remove('hidden');
                     loadingInd.classList.add('hidden');
                     document.getElementById('login-pwd').value = '';
-                }
-            }, 800);
+                });
         }
 
         function executeLoginSequence(role) {
@@ -929,6 +932,8 @@
         }
 
         function handleLogout() {
+            if (authToken) postToServer({ METHOD: 'LOGOUT' }).catch(() => {});
+            authToken = null; complaintsData = []; filteredData = []; dashboardData = [];
             isLoggedIn = false; currentUserRole = null;
             selectedYear = 'ALL'; selectedDashboardPPD = 'ALL'; activeTab = 'dashboard';
             
@@ -956,7 +961,7 @@
             } else {
                 document.documentElement.classList.remove('dark'); currentTheme = 'light';
             }
-            fetchGoogleSheetsData(true); 
+            // Data hanya dimuat selepas log masuk (lihat handleLogin)
         };
 
         function parseToMalayMonth(monthInput, dateInput) {
@@ -1024,9 +1029,9 @@
         function getRowValueFuzzy(row, desiredKey) {
             const keys = Object.keys(row);
             const normalizedDesired = desiredKey.replace(/[^A-Z0-9]/gi, '').toLowerCase();
-            if (row[desiredKey] !== undefined) return row[desiredKey].trim();
+            if (row[desiredKey] != null) return String(row[desiredKey]).trim();
             const foundKey = keys.find(k => k.replace(/[^A-Z0-9]/gi, '').toLowerCase() === normalizedDesired);
-            if (foundKey) return row[foundKey].trim();
+            if (foundKey && row[foundKey] != null) return String(row[foundKey]).trim();
             return "";
         }
 
@@ -1756,7 +1761,7 @@
             // ISYARAT MUTLAK UNTUK PELAYAN (UPDATE baris sedia ada — JANGAN BUAT BARIS BAHARU!)
             formData.append("METHOD", "UPDATE"); 
 
-            fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
+            postToServer(Object.fromEntries(formData))
             .then(res => {
                 complaintsData[rawIndex] = targetCase; 
                 initDashboard(); 
@@ -1764,7 +1769,7 @@
                 closeDetailsModal(); 
                 showToast("Disimpan", `Rekod dikemas kini dengan selamat.`, "success");
             })
-            .catch(err => showToast("Ralat Rangkaian", "Gagal menghubungi pelayan Google.", "danger"))
+            .catch(err => showToast("Gagal Menyimpan", escapeHtml(err.message), "danger"))
             .finally(() => {
                 isSavingAdmin = false;
                 if (btnSave) {
@@ -1778,11 +1783,25 @@
         function openDeleteConfirm() { document.getElementById('confirmDeleteModal').classList.remove('hidden'); document.getElementById('confirmDeleteModal').classList.add('flex'); document.getElementById('btnConfirmDelete').onclick = executeDelete; }
         function closeDeleteConfirm() { document.getElementById('confirmDeleteModal').classList.add('hidden'); document.getElementById('confirmDeleteModal').classList.remove('flex'); deleteTargetIndex = null; }
         
+        let isDeleting = false;
         function executeDelete() {
-            if (deleteTargetIndex !== null && deleteTargetIndex >= 0) {
-                complaintsData.splice(deleteTargetIndex, 1); initDashboard(); if(activeTab === 'cases') applyFilters();
-                closeDeleteConfirm(); closeDetailsModal(); showToast("Dibuang dari Paparan", "Rekod dibuang dari paparan sahaja. Rekod masih wujud di Google Sheets dan akan muncul semula selepas Muat Semula.", "warning");
-            }
+            if (isDeleting || deleteTargetIndex === null || deleteTargetIndex < 0) return;
+            const target = complaintsData[deleteTargetIndex];
+            if (!target) return;
+            isDeleting = true;
+            const btn = document.getElementById('btnConfirmDelete');
+            btn.disabled = true; btn.innerText = 'Memadam...';
+
+            postToServer({ METHOD: 'DELETE', "NO KES": target["NO KES"] })
+                .then(() => {
+                    const idx = complaintsData.findIndex(item => normKes(item["NO KES"]) === normKes(target["NO KES"]));
+                    if (idx !== -1) complaintsData.splice(idx, 1);
+                    initDashboard(); if(activeTab === 'cases') applyFilters();
+                    closeDeleteConfirm(); closeDetailsModal();
+                    showToast("Dipadam", "Rekod dipindahkan ke sheet arkib 'Dipadam'.", "success");
+                })
+                .catch(err => showToast("Gagal Memadam", escapeHtml(err.message), "danger"))
+                .finally(() => { isDeleting = false; btn.disabled = false; btn.innerText = 'Padam'; });
         }
 
         function calculateTempoh() {
@@ -1845,7 +1864,7 @@
             // ISYARAT PELAYAN — pelayan akan UPSERT (kemas kini jika NO KES wujud, tambah jika belum)
             formData.append("METHOD", "APPEND"); 
 
-            fetch(SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: formData })
+            postToServer(Object.fromEntries(formData))
             .then(res => {
                 // Selaras dengan logik upsert pelayan: satu NO KES = satu rekod sahaja
                 const existingIndex = complaintsData.findIndex(item => normKes(item["NO KES"]) === normKes(nCase["NO KES"]));
@@ -1856,7 +1875,7 @@
                 switchTab('dashboard');
                 showToast("Berjaya!", "Aduan ditambah / dikemas kini di pangkalan data awan.", "success");
             })
-            .catch(err => showToast("Ralat Rangkaian", "Gagal menyimpan ke Drive.", "danger"))
+            .catch(err => showToast("Gagal Menyimpan", escapeHtml(err.message), "danger"))
             .finally(() => {
                 isSubmittingComplaint = false;
                 if (btnSubmit) {
@@ -1868,15 +1887,13 @@
         }
 
         function fetchGoogleSheetsData(isInitial = false) {
-            const url = CSV_DATA_URL;
-            if(!url) return;
+            if (!authToken) return;
             if(!isInitial) showToast("Menyambung...", "Mengambil data...", "warning");
 
-            Papa.parse(url, {
-                download: true, header: true, skipEmptyLines: true,
-                complete: function(results) {
-                    if(results.data.length === 0) return;
-                    const imported = results.data.map((row, rowIdx) => {
+            // Data ditapis ikut PPD pengguna di pelayan
+            postToServer({ METHOD: 'LIST' })
+                .then(function(results) {
+                    const imported = (results.rows || []).map((row, rowIdx) => {
                         const getVal = (key) => getRowValueFuzzy(row, key);
                         const tarikhTerimaNorm = normalizeDate(getVal("TARIKH TERIMA") || getVal("TARIKH_TERIMA") || getVal("TARIKH_MASUK") || getVal("TARIKH") || getVal("TIMESTAMP"));
                         const tarikhSelesaiNorm = normalizeDate(getVal("TARIKH SELESAI") || getVal("TARIKH_SELESAI") || getVal("TARIKH_TUTUP"));
@@ -1922,8 +1939,12 @@
                     const statusBadge = document.getElementById('dataStatusBadge');
                     if(statusBadge) { statusBadge.innerText = "Google Sheets Aktif"; statusBadge.className = "text-[9px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full"; }
                     if(!isInitial) showToast("Segerak Berjaya!", `${complaintsData.length} rekod ditarik!`, "success");
-                }
-            });
+                })
+                .catch(err => {
+                    const statusBadge = document.getElementById('dataStatusBadge');
+                    if(statusBadge) { statusBadge.innerText = "Gagal Dimuat"; statusBadge.className = "text-[9px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded-full"; }
+                    if (err.code !== 'SESSION_EXPIRED') showToast("Gagal Memuat Data", escapeHtml(err.message), "danger");
+                });
         }
     </script>
 </body>
